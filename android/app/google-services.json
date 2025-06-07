@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "655377908506",
+    "project_id": "flutterfirenote-f3369",
+    "storage_bucket": "flutterfirenote-f3369.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:655377908506:android:f1bd6cc50e9791de9362a3",
+        "android_client_info": {
+          "package_name": "com.example.chat_webapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzPRWKwRParMATKQXgnQdo8jr-Za90GR0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
