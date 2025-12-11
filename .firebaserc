@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "chat-app": "flutterfirenote-f3369"
+  },
+  "targets": {
+    "flutterfirenote-f3369": {
+      "hosting": {
+        "chat-app": [
+          "chat-app-55333"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

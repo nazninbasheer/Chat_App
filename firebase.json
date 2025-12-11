@@ -1,1 +1,16 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"flutterfirenote-f3369","appId":"1:655377908506:android:f1bd6cc50e9791de9362a3","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"flutterfirenote-f3369","configurations":{"android":"1:655377908506:android:f1bd6cc50e9791de9362a3","ios":"1:655377908506:ios:6cd250ef869016d59362a3","web":"1:655377908506:web:01b9890059baf3ba9362a3"}}}}}}
+{
+  "hosting": [
+    {
+      "target": "chat-app",
+      "public": "build/web",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        { "source": "**", "destination": "/index.html" }
+      ]
+    }
+  ]
+}
