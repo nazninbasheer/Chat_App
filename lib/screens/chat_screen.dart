@@ -33,6 +33,13 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     chatId = getChatId(currentUser!.uid, widget.receiverId);
     markMessagesAsRead();
+    updateLastSeen();
+  }
+
+  void updateLastSeen() async {
+    await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).set({
+      'lastSeen': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   void markMessagesAsRead() async {
@@ -78,7 +85,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Scaffold(
       appBar: AppBar(
         elevation: 1,
-        backgroundColor: Colors.white,
+        backgroundColor: Color.fromARGB(255, 255, 228, 247),
         foregroundColor: Colors.black,
         title: Row(
           children: [
@@ -90,9 +97,43 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              widget.receiverName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.receiverName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance.collection('users').doc(widget.receiverId).snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || !snapshot.data!.exists) {
+                        return const SizedBox.shrink();
+                      }
+                      final data = snapshot.data!.data() as Map<String, dynamic>?;
+                      final lastSeen = data?['lastSeen'] as Timestamp?;
+                      if (lastSeen == null) {
+                        return const SizedBox.shrink();
+                      }
+                      final now = DateTime.now();
+                      final lastSeenDate = lastSeen!.toDate();
+                      final difference = now.difference(lastSeenDate);
+                      if (difference.inMinutes < 1) {
+                        return const Text(
+                          'Online',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        );
+                      } else {
+                        return Text(
+                          'Last seen ${difference.inMinutes} min ago',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -204,7 +245,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                                     ?.containsKey('read') ==
                                                 true &&
                                             msg['read'] == true)
-                                            ? Colors.lightBlueAccent
+                                            ? Colors.yellow
                                             : Colors.white70,
                                       ),
                                     ],
@@ -228,10 +269,10 @@ class _ChatScreenState extends State<ChatScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: const BoxDecoration(
-                color: Colors.white,
+                color: Color.fromARGB(255, 255, 199, 239),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
+                    color: Color.fromARGB(31, 255, 224, 224),
                     blurRadius: 4,
                     offset: Offset(0, -1),
                   ),
