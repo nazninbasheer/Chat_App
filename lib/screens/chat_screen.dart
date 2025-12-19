@@ -32,8 +32,18 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     chatId = getChatId(currentUser!.uid, widget.receiverId);
+    ensureChatDocument();
     markMessagesAsRead();
     updateLastSeen();
+  }
+
+  void ensureChatDocument() async {
+    final chatDoc = await FirebaseFirestore.instance.collection('chats').doc(chatId).get();
+    if (!chatDoc.exists || !(chatDoc.data()?.containsKey('participants') ?? false)) {
+      await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
+        'participants': [currentUser!.uid, widget.receiverId],
+      }, SetOptions(merge: true));
+    }
   }
 
   void updateLastSeen() async {
@@ -51,13 +61,38 @@ class _ChatScreenState extends State<ChatScreen> {
         .where('read', isEqualTo: false)
         .get();
 
+    final unreadCount = unreadMessages.docs.length;
+
     for (var doc in unreadMessages.docs) {
       await doc.reference.update({'read': true});
+    }
+
+    // Decrement unread count in chat document
+    if (unreadCount > 0) {
+      final isUser1 = currentUser!.uid.compareTo(widget.receiverId) < 0;
+      final unreadField = isUser1 ? 'unreadCountForUser1' : 'unreadCountForUser2';
+
+      await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
+        unreadField: FieldValue.increment(-unreadCount),
+      }, SetOptions(merge: true));
     }
   }
 
   void sendMessage() async {
     if (_messageController.text.trim().isEmpty) return;
+
+    final messageText = _messageController.text.trim();
+
+    // Update chat document with participants, last message, and unread count
+    final isUser1 = currentUser!.uid.compareTo(widget.receiverId) < 0;
+    final unreadField = isUser1 ? 'unreadCountForUser2' : 'unreadCountForUser1';
+
+    await FirebaseFirestore.instance.collection('chats').doc(chatId).set({
+      'participants': [currentUser!.uid, widget.receiverId],
+      'lastMessage': messageText,
+      'lastTimestamp': FieldValue.serverTimestamp(),
+      unreadField: FieldValue.increment(1),
+    }, SetOptions(merge: true));
 
     await FirebaseFirestore.instance
         .collection('chats')
@@ -67,7 +102,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'senderId': currentUser!.uid,
       'receiverId': widget.receiverId,
       'timestamp': FieldValue.serverTimestamp(),
-      'text': _messageController.text.trim(),
+      'text': messageText,
       'read': false,
     });
 
