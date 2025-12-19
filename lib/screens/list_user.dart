@@ -94,60 +94,154 @@ class UserListScreen extends StatelessWidget {
                 final userData = users[index].data() as Map<String, dynamic>;
                 final name = userData['name'] ?? 'No Name';
                 final email = userData['email'] ?? '';
+                final peerId = userData['uid'];
+                final chatId = getChatId(currentUser!.uid, peerId);
 
-                return Card(
-                  elevation: 8,
-                  shadowColor: Colors.black26,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                return StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('chats')
+                      .doc(chatId)
+                      .collection('messages')
+                      .where('receiverId', isEqualTo: currentUser!.uid)
+                      .where('read', isEqualTo: false)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    int unreadCount = 0;
+                    if (snapshot.hasData) {
+                      unreadCount = snapshot.data!.docs.length;
+                    }
+
+                    return Card(
+  elevation: 8,
+  shadowColor: Colors.black26,
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(16),
+  ),
+  margin: const EdgeInsets.symmetric(vertical: 10),
+  child: StreamBuilder<QuerySnapshot>(
+    stream: FirebaseFirestore.instance
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .limit(1)
+        .snapshots(),
+    builder: (context, messageSnapshot) {
+      String lastMessage = 'No messages yet';
+      String timeText = '';
+      if (messageSnapshot.hasData && messageSnapshot.data!.docs.isNotEmpty) {
+  final lastMsgDoc = messageSnapshot.data!.docs.first.data() as Map<String, dynamic>;
+  lastMessage = lastMsgDoc['text'] ?? 'No messages yet';
+  final timestamp = lastMsgDoc['timestamp'] as Timestamp?;
+  if (timestamp != null) {
+    final dt = timestamp.toDate();
+
+    // Convert to 12-hour format with AM/PM
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    timeText = '$hour:$minute $period';
+  }
+}
+
+
+      return ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: CircleAvatar(
+          radius: 26,
+          backgroundColor: Colors.deepPurple.shade200,
+          child: Text(
+            name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              timeText,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+        subtitle: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                lastMessage,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (unreadCount > 0)
+              Container(
+                margin: const EdgeInsets.only(left: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                constraints: const BoxConstraints(
+                  minWidth: 24,
+                  minHeight: 24,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  unreadCount > 99 ? '99+' : unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
                   ),
-                  margin: const EdgeInsets.symmetric(vertical: 10),
-                  child: ListTile(
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    leading: CircleAvatar(
-                      radius: 26,
-                      backgroundColor: Colors.deepPurple.shade200,
-                      child: Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 19,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.navigate_next,
-                        color: Colors.deepPurple),
-                    onTap: () {
-                      final currentUserId =
-                          FirebaseAuth.instance.currentUser!.uid;
-                      final peerId = users[index]['uid'];
-                      final peerEmail = users[index]['email'];
-                      final peerName = users[index]['name'];
+                ),
+              ),
+          ],
+        ),
+        trailing: const Icon(
+          Icons.navigate_next,
+          color: Colors.deepPurple,
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                receiverId: peerId,
+                receiverEmail: email,
+                chatId: chatId,
+                receiverName: name,
+              ),
+            ),
+          );
+        },
+      );
+    },
+  ),
 
-                      final chatId = getChatId(currentUserId, peerId);
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatScreen(
-                            receiverId: peerId,
-                            receiverEmail: peerEmail,
-                            chatId: chatId,
-                            receiverName: peerName,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                    );
+                  },
                 );
               },
             );
