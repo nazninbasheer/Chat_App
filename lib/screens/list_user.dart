@@ -19,6 +19,7 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _isSettingsTab = false;
+  Map<String, Map<String, dynamic>> _usersMap = {};
 
   @override
   void initState() {
@@ -33,6 +34,14 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
       setState(() {
         _searchQuery = _searchController.text.toLowerCase();
       });
+    });
+    _loadUsers();
+  }
+
+  void _loadUsers() async {
+    final usersSnapshot = await FirebaseFirestore.instance.collection('users').get();
+    setState(() {
+      _usersMap = {for (var doc in usersSnapshot.docs) doc.id: doc.data()};
     });
   }
 
@@ -111,6 +120,10 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
   }
 
   Widget _buildUserList(bool showOnlyUnread) {
+    if (_usersMap.isEmpty) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
     return Container(
       decoration: const BoxDecoration(
         image: DecorationImage(
@@ -143,14 +156,63 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
             ),
           ),
           SliverToBoxAdapter(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: getSortedUsers(showOnlyUnread, _searchQuery),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('chats')
+                  .where('participants', arrayContains: currentUser!.uid)
+                  .snapshots(),
+              builder: (context, chatSnapshot) {
+                if (chatSnapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: Colors.white));
                 }
 
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                final chatMap = <String, Map<String, dynamic>>{};
+                if (chatSnapshot.hasData) {
+                  for (var doc in chatSnapshot.data!.docs) {
+                    chatMap[doc.id] = doc.data() as Map<String, dynamic>;
+                  }
+                }
+
+                final List<Map<String, dynamic>> sortedUsers = [];
+
+                for (var entry in _usersMap.entries) {
+                  final userData = entry.value;
+                  final uid = userData['uid'];
+                  if (uid == currentUser!.uid) continue;
+                  final name = userData['name'] ?? '';
+                  if (!name.toLowerCase().contains(_searchQuery)) continue;
+
+                  final chatId = getChatId(currentUser!.uid, uid);
+                  final chatData = chatMap[chatId];
+
+                  final lastTimestamp = chatData?['lastTimestamp'] as Timestamp?;
+                  final lastMessage = chatData?['lastMessage'] as String? ?? 'No messages yet';
+
+                  final isUser1 = currentUser!.uid.compareTo(uid) < 0;
+                  final unreadField = isUser1 ? 'unreadCountForUser1' : 'unreadCountForUser2';
+                  final unreadCount = chatData?[unreadField] as int? ?? 0;
+
+                  if (showOnlyUnread && unreadCount == 0) continue;
+
+                  sortedUsers.add({
+                    'userData': userData,
+                    'lastTimestamp': lastTimestamp,
+                    'lastMessage': lastMessage,
+                    'unreadCount': unreadCount,
+                  });
+                }
+
+                // Sort by lastTimestamp descending, nulls last
+                sortedUsers.sort((a, b) {
+                  final aTime = a['lastTimestamp'] as Timestamp?;
+                  final bTime = b['lastTimestamp'] as Timestamp?;
+                  if (aTime == null && bTime == null) return 0;
+                  if (aTime == null) return 1;
+                  if (bTime == null) return -1;
+                  return bTime.compareTo(aTime);
+                });
+
+                if (sortedUsers.isEmpty) {
                   return Center(
                     child: Text(
                       showOnlyUnread ? "No users with unread messages." : "No other users found.",
@@ -158,8 +220,6 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
                     ),
                   );
                 }
-
-                final sortedUsers = snapshot.data!;
 
                 return ListView.builder(
                   shrinkWrap: true,
@@ -170,12 +230,22 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
                     final userMap = sortedUsers[index];
                     final userData = userMap['userData'] as Map<String, dynamic>;
                     final lastTimestamp = userMap['lastTimestamp'] as Timestamp?;
+                    final lastMessage = userMap['lastMessage'] as String;
                     final unreadCount = userMap['unreadCount'] as int;
 
                     final name = userData['name'] ?? 'No Name';
                     final email = userData['email'] ?? '';
                     final peerId = userData['uid'];
                     final chatId = getChatId(currentUser!.uid, peerId);
+
+                    String timeText = '';
+                    if (lastTimestamp != null) {
+                      final dt = lastTimestamp.toDate();
+                      final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+                      final minute = dt.minute.toString().padLeft(2, '0');
+                      final period = dt.hour >= 12 ? 'PM' : 'AM';
+                      timeText = '$hour:$minute $period';
+                    }
 
                     return Card(
                       elevation: 12,
@@ -184,135 +254,96 @@ class _UserListScreenState extends State<UserListScreen> with TickerProviderStat
                         borderRadius: BorderRadius.circular(16),
                       ),
                       margin: const EdgeInsets.symmetric(vertical: 10),
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('chats')
-                            .doc(chatId)
-                            .collection('messages')
-                            .where('receiverId', isEqualTo: currentUser!.uid)
-                            .where('read', isEqualTo: false)
-                            .snapshots(),
-                        builder: (context, unreadSnapshot) {
-                          final unreadCount = unreadSnapshot.hasData ? unreadSnapshot.data!.docs.length : 0;
-
-                          return StreamBuilder<QuerySnapshot>(
-                            stream: FirebaseFirestore.instance
-                                .collection('chats')
-                                .doc(chatId)
-                                .collection('messages')
-                                .orderBy('timestamp', descending: true)
-                                .limit(1)
-                                .snapshots(),
-                            builder: (context, messageSnapshot) {
-                              String lastMessage = 'No messages yet';
-                              String timeText = '';
-                              if (messageSnapshot.hasData && messageSnapshot.data!.docs.isNotEmpty) {
-                                final lastMsgDoc = messageSnapshot.data!.docs.first.data() as Map<String, dynamic>;
-                                lastMessage = lastMsgDoc['text'] ?? 'No messages yet';
-                                final timestamp = lastMsgDoc['timestamp'] as Timestamp?;
-                                if (timestamp != null) {
-                                  final dt = timestamp.toDate();
-                                  final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-                                  final minute = dt.minute.toString().padLeft(2, '0');
-                                  final period = dt.hour >= 12 ? 'PM' : 'AM';
-                                  timeText = '$hour:$minute $period';
-                                }
-                              }
-
-                              return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                leading: CircleAvatar(
-                                  radius: 26,
-                                  backgroundImage: userData['avatarUrl'] != null ? NetworkImage(userData['avatarUrl']) : null,
-                                  backgroundColor: Colors.deepPurple.shade200,
-                                  child: userData['avatarUrl'] == null ? Text(
-                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ) : null,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: CircleAvatar(
+                          radius: 26,
+                          backgroundImage: userData['avatarUrl'] != null ? NetworkImage(userData['avatarUrl']) : null,
+                          backgroundColor: Colors.deepPurple.shade200,
+                          child: userData['avatarUrl'] == null ? Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ) : null,
+                        ),
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
                                 ),
-                                title: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    Text(
-                                      timeText,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                  ],
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              timeText,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                lastMessage,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey.shade600,
                                 ),
-                                subtitle: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        lastMessage,
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (unreadCount > 0)
-                                      Container(
-                                        margin: const EdgeInsets.only(left: 8),
-                                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.deepPurple,
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        constraints: const BoxConstraints(
-                                          minWidth: 24,
-                                          minHeight: 24,
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Text(
-                                          unreadCount > 99 ? '99+' : unreadCount.toString(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                trailing: const Icon(
-                                  Icons.navigate_next,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (unreadCount > 0)
+                              Container(
+                                margin: const EdgeInsets.only(left: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(
                                   color: Colors.deepPurple,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ChatScreen(
-                                        receiverId: peerId,
-                                        receiverEmail: email,
-                                        chatId: chatId,
-                                        receiverName: name,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
+                                constraints: const BoxConstraints(
+                                  minWidth: 24,
+                                  minHeight: 24,
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  unreadCount > 99 ? '99+' : unreadCount.toString(),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        trailing: const Icon(
+                          Icons.navigate_next,
+                          color: Colors.deepPurple,
+                        ),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatScreen(
+                                receiverId: peerId,
+                                receiverEmail: email,
+                                chatId: chatId,
+                                receiverName: name,
+                              ),
+                            ),
                           );
                         },
                       ),

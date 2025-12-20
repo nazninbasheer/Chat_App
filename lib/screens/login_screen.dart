@@ -98,9 +98,8 @@ bool _obscurePassword = true;
   // ✅ All valid
   setState(() {
     _error = '';
-    _success = "Success 🎉";
+    _isLoading = true;
   });
-
 
   try {
     if (_isLogin) {
@@ -139,10 +138,12 @@ bool _obscurePassword = true;
   } on FirebaseAuthException catch (e) {
     setState(() {
       _error = e.message ?? 'Authentication error';
+      _success = '';
     });
   } catch (e) {
     setState(() {
       _error = 'Something went wrong';
+      _success = '';
     });
   } finally {
     setState(() {

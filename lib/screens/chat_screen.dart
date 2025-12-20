@@ -127,7 +127,7 @@ class _ChatScreenState extends State<ChatScreen> {
             CircleAvatar(
               backgroundColor: Colors.deepPurple.shade300,
               child: Text(
-                widget.receiverName[0].toUpperCase(),
+                widget.receiverName.isNotEmpty ? widget.receiverName[0].toUpperCase() : '?',
                 style: const TextStyle(color: Colors.white),
               ),
             ),
@@ -137,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.receiverName,
+                    widget.receiverName.isNotEmpty ? widget.receiverName : 'Unknown User',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   StreamBuilder<DocumentSnapshot>(
